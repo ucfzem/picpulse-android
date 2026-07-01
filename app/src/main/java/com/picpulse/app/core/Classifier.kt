@@ -20,10 +20,29 @@ class Classifier(private val context: Context) {
 
     fun load(): Boolean {
         return try {
-            val modelFile = getModelFile()
-            if (!modelFile.exists()) return false
-            interpreter = Interpreter(modelFile)
-            labels = loadLabels()
+            // Try bundled assets first, then fall back to downloaded file
+            if (!loadFromAssets()) {
+                val modelFile = getModelFile()
+                if (!modelFile.exists()) return false
+                interpreter = Interpreter(modelFile)
+                labels = loadLabels()
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun loadFromAssets(): Boolean {
+        return try {
+            val modelStream = context.assets.open("models/mobilenet_v2_1.0_224.tflite")
+            val modelBytes = modelStream.readBytes()
+            modelStream.close()
+            interpreter = Interpreter(ByteBuffer.wrap(modelBytes))
+
+            val labelsStream = context.assets.open("models/imagenet_labels.txt")
+            labels = labelsStream.bufferedReader().readLines()
+            labelsStream.close()
             true
         } catch (e: Exception) {
             false
@@ -32,8 +51,8 @@ class Classifier(private val context: Context) {
 
     suspend fun downloadModel(onProgress: (Int) -> Unit = {}): Boolean {
         return try {
-            val modelUrl = "https://storage.googleapis.com/download.tensorflow.org/models/tflite/model_zoo/vision_models/mobilenet_v2_1.0_224.tflite"
-            val labelsUrl = "https://storage.googleapis.com/download.tensorflow.org/models/tflite/model_zoo/vision_models/imagenet_labels.txt"
+            val modelUrl = "https://raw.githubusercontent.com/google-ai-edge/LiteRT/main/litert/test/testdata/mobilenet_v2_1.0_224.tflite"
+            val labelsUrl = "https://storage.googleapis.com/download.tensorflow.org/data/ImageNetLabels.txt"
 
             downloadFile(modelUrl, getModelFile(), onProgress)
             downloadFile(labelsUrl, getLabelsFile(), onProgress)
