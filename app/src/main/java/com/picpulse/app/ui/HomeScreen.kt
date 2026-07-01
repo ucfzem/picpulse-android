@@ -48,7 +48,7 @@ fun HomeScreen(
 
         if (downloadProgress in 0..99) {
             LinearProgressIndicator(
-                progress = { downloadProgress / 100f },
+                progress = downloadProgress / 100f,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))

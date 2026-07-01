@@ -37,7 +37,7 @@ fun ProcessingScreen(
             }
             is ProcessingState.Processing -> {
                 LinearProgressIndicator(
-                    progress = { s.current.toFloat() / s.total },
+                    progress = s.current.toFloat() / s.total,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
