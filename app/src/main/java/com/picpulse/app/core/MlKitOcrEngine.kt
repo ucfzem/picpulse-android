@@ -13,19 +13,16 @@ class MlKitOcrEngine : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrEngine.Result? {
         return try {
             val image = InputImage.fromBitmap(bitmap, 0)
-            val text = suspendCancellableCoroutine<com.google.mlkit.vision.text.Text?> { cont ->
+            val visionText = suspendCancellableCoroutine<com.google.mlkit.vision.text.Text?> { cont ->
                 recognizer.process(image)
                     .addOnSuccessListener { cont.resume(it) }
                     .addOnFailureListener { cont.resume(null) }
             } ?: return null
 
-            val fullText = text.resultText.trim()
+            val fullText = visionText.text?.trim() ?: return null
             if (fullText.isEmpty()) return null
 
-            val bestBlock = text.textBlocks.maxByOrNull { it.confidence ?: 0f }
-            val confidence = bestBlock?.confidence ?: 0f
-
-            OcrEngine.Result(detectedText = fullText.take(100), confidence = confidence / 100f)
+            OcrEngine.Result(detectedText = fullText.take(100), confidence = 1.0f)
         } catch (e: Exception) {
             null
         }
