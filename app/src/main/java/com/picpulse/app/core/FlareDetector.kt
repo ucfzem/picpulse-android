@@ -12,7 +12,7 @@ class FlareDetector(private val threshold: Float = 0.3f) {
     )
 
     private data class Region(
-        val area: Int, val meanHue: Float, val isMagenta: Boolean
+        val area: Int, val meanHue: Float, val isMagenta: Boolean, val isCircularBlob: Boolean
     )
 
     fun analyze(bitmap: Bitmap): Result {
@@ -24,7 +24,6 @@ class FlareDetector(private val threshold: Float = 0.3f) {
 
         val hue = FloatArray(w * h)
         val value = FloatArray(w * h)
-        val saturation = FloatArray(w * h)
 
         val brightMask = BooleanArray(w * h)
 
@@ -42,10 +41,8 @@ class FlareDetector(private val threshold: Float = 0.3f) {
             val cmin = minOf(rf, gf, bf)
             val delta = cmax - cmin
 
-            // Value
-            value[i] = cmax * 360f
-            // Saturation
-            saturation[i] = if (cmax == 0f) 0f else (delta / cmax) * 360f
+            // Value (correct 0-255 scale, was cmax * 360f)
+            value[i] = cmax * 255f
             // Hue
             hue[i] = when {
                 delta == 0f -> 0f
@@ -61,13 +58,21 @@ class FlareDetector(private val threshold: Float = 0.3f) {
         val brightCount = brightMask.count { it }
         val brightRatio = brightCount.toFloat() / totalPixels
 
+        // Relative-to-image-size region thresholds
+        val minRegionPixels = maxOf(30, (totalPixels * 0.0005f).toInt())
+        val largeRegionPixels = maxOf(300, (totalPixels * 0.003f).toInt())
+
         val visited = BooleanArray(w * h)
         val regions = mutableListOf<Region>()
 
-        fun floodFill(start: Int): Pair<Int, Float> {
+        fun floodFill(start: Int): Region? {
             val stack = mutableListOf(start)
             var count = 0
             var totalHue = 0f
+            var minX = Int.MAX_VALUE
+            var maxX = Int.MIN_VALUE
+            var minY = Int.MAX_VALUE
+            var maxY = Int.MIN_VALUE
             while (stack.isNotEmpty()) {
                 val idx = stack.removeLast()
                 if (idx < 0 || idx >= w * h || visited[idx] || !brightMask[idx]) continue
@@ -76,41 +81,50 @@ class FlareDetector(private val threshold: Float = 0.3f) {
                 totalHue += hue[idx]
                 val x = idx % w
                 val y = idx / w
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
                 if (x > 0) stack.add(idx - 1)
                 if (x < w - 1) stack.add(idx + 1)
                 if (y > 0) stack.add(idx - w)
                 if (y < h - 1) stack.add(idx + w)
             }
-            return Pair(count, totalHue)
+            if (count < minRegionPixels) return null
+            val meanHue = totalHue / count
+            val isMagenta = meanHue in 280f..330f
+            val bw = maxX - minX + 1
+            val bh = maxY - minY + 1
+            val bboxArea = bw * bh
+            val fillRatio = if (bboxArea > 0) count.toFloat() / bboxArea else 0f
+            val aspectRatio = maxOf(bw, bh).toFloat() / maxOf(1, minOf(bw, bh))
+            val isCircularBlob = fillRatio > 0.55f && aspectRatio < 1.8f
+            return Region(count, meanHue, isMagenta, isCircularBlob)
         }
 
         for (i in brightMask.indices) {
             if (!visited[i] && brightMask[i]) {
-                val (area, totalHue) = floodFill(i)
-                if (area >= 50) {
-                    val meanHue = totalHue / area
-                    val isMagenta = meanHue in 280f..330f
-                    regions.add(Region(area, meanHue, isMagenta))
+                val region = floodFill(i)
+                if (region != null) {
+                    regions.add(region)
                 }
             }
         }
 
-        val largeRegions = regions.count { it.area > 500 }
+        val circularBlobs = regions.count { r -> r.area > largeRegionPixels && r.isCircularBlob }
         val magentaRegions = regions.count { it.isMagenta }
 
         var score = 0f
-        if (brightRatio > 0.15f) score += 0.3f
-        if (largeRegions >= 2) score += 0.3f
-        if (largeRegions >= 3) score += 0.2f
-        if (magentaRegions >= 1) score += 0.2f
-        if (brightRatio > 0.05f && largeRegions >= 1) score += 0.2f
+        if (circularBlobs >= 1) score += 0.3f
+        if (circularBlobs >= 2) score += 0.3f
+        if (magentaRegions >= 1) score += 0.4f
         score = score.coerceAtMost(1f)
 
         return Result(
             hasFlare = score >= threshold,
             score = score,
             brightRatio = brightRatio,
-            brightRegionCount = largeRegions
+            brightRegionCount = circularBlobs
         )
     }
 }
