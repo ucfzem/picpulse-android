@@ -57,9 +57,6 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // OpenCV
-    implementation("com.quickbirdstudios:opencv:4.9.0")
-
     // ML Kit OCR
     implementation("com.google.mlkit:text-recognition:16.0.0")
 
